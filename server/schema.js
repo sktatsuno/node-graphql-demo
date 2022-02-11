@@ -6,20 +6,14 @@ const {
   GraphQLSchema,
   GraphQLList,
 } = require('graphql');
+const { tests } = require('./dummyData');
+const { client } = require('./caching');
 
-const tests = [
-  {
-    //dummy data
-    id: 1,
-    message: 'hello world',
-    text: 'just seeing if it works',
-  },
-  {
-    id: 2,
-    message: 'hello worlds',
-    text: 'text2',
-  },
-];
+function timeout(ms) {
+  console.log('slowed down')
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const TestTypeSchema = {
   id: { type: GraphQLInt },
   message: { type: GraphQLString },
@@ -36,8 +30,13 @@ const RootQuery = new GraphQLObjectType({
   fields: {
     getAllTest: {
       type: new GraphQLList(TestType),
-      resolve() {
-        return tests;
+      //sets the query key on the cache with the query result and returns it
+      resolve: async (parent, args, context) => {
+        const { query } = context.body;
+        const result = tests;
+        await client.set(query, JSON.stringify(result));
+        await timeout(1000); // artificial delay to simulate slow data getting
+        return result;
       },
     },
     getOneTest: {
@@ -45,9 +44,13 @@ const RootQuery = new GraphQLObjectType({
       args: {
         id: { type: GraphQLInt },
       },
-      resolve(parent, args) {
+      resolve: async (parent, args) => {
+        //sets the query key on the cache with the query result and returns it
         console.log(args);
-        return tests.find((el) => el.id === args.id);
+        const { query } = context.body;
+        const result = tests.find((el) => el.id === args.id);
+        await client.set(query, JSON.stringify(result));
+        return result;
       },
     },
   },
@@ -59,7 +62,7 @@ const mutation = new GraphQLObjectType({
     createTest: {
       type: TestType,
       args: TestTypeSchema,
-      resolve(parent, args) {
+      resolve: (parent, args) => {
         console.log(args);
         tests.push({
           id: args.id,
@@ -68,9 +71,6 @@ const mutation = new GraphQLObjectType({
         });
         return tests[tests.length - 1];
       },
-      // deleteTest:{
-      //   type: GraphQLString
-      // }
     },
   },
 });
